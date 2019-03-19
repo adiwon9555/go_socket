@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	r "github.com/dancannon/gorethink"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -11,16 +12,33 @@ func addChannel(client *Client, data interface{}) {
 	var channel Channel
 	err := mapstructure.Decode(data, &channel)
 	if err != nil {
-		fmt.Println("Error: ", err)
+		client.send <- Message{Name: "error", Data: err.Error()}
+
+		return
 	}
-	channel.ID = 1
+	// channel.ID = 1
 	fmt.Println("Channel added")
 	fmt.Printf("%+v\n", channel)
-	//Replace with adding channe to db
+	err = r.Table("channel").Insert(channel).Exec(client.session)
+	if err != nil {
+		client.send <- Message{Name: "error", Data: err.Error()}
+		return
+	}
+	//Replace with adding channel to db
 }
+
 func subscribeChannel(client *Client, data interface{}) {
 	//Replace with changeFeed from Rethink Db that will look up for channels and then
 	//block/wait until add,remove or edit operation in channels data in db
+	// cursor, err := r.Table("channel").Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
+	// if err != nil {
+	// 	client.send <- Message{Name: "error", Data: err.Error()}
+	// 	return
+	// }
+	// var changeResponse r.ChangeResponse
+	// for cursor.Next(&changeResponse) {
+	// 	fmt.Printf("%+v\n", changeResponse)
+	// }
 	for {
 		time.Sleep(time.Second * 2)
 		msg := Message{

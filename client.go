@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	r "github.com/dancannon/gorethink"
 	"github.com/gorilla/websocket"
 )
 
@@ -23,17 +24,19 @@ type Client struct {
 	socket      *websocket.Conn
 	send        chan Message
 	findHandler FindHandler
+	session     *r.Session
 }
 
 //FindHandler is
 type FindHandler func(string) (Handler, bool)
 
 //NewClient is
-func NewClient(socket *websocket.Conn, findHandler FindHandler) *Client {
+func NewClient(socket *websocket.Conn, findHandler FindHandler, session *r.Session) *Client {
 	return &Client{
 		socket:      socket,
 		send:        make(chan Message),
 		findHandler: findHandler,
+		session:     session,
 	}
 
 }
