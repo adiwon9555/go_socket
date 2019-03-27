@@ -2,35 +2,10 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	r "github.com/dancannon/gorethink"
 	"github.com/gorilla/websocket"
 )
-
-type Msg struct {
-	ID        string    `json:"id" gorethink:"id,omitempty"`
-	Body      string    `json:"body" gorethink:"body"`
-	Author    string    `json:"author" gorethink:"author"`
-	CreatedAt time.Time `json:"createdAt" gorethink:"createdAt"`
-	ChannelId string    `json:"channelId" gorethink:"channelId"`
-}
-
-//Message is
-type Message struct {
-	Name string      `json:"name" gorethink:"name"`
-	Data interface{} `json:"data" gorethink:"data"`
-}
-
-//Channel is
-type Channel struct {
-	ID   string `json:"id" gorethink:"id,omitempty"`
-	Name string `json:"name" gorethink:"name"`
-}
-type User struct {
-	ID   string `json:"id" gorethink:"id,omitempty"`
-	Name string `json:"name" gorethink:"name"`
-}
 
 //Client is
 type Client struct {

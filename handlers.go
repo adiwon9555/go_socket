@@ -14,6 +14,30 @@ const (
 	userStop
 )
 
+type Msg struct {
+	ID        string    `json:"id" gorethink:"id,omitempty"`
+	Body      string    `json:"body" gorethink:"body"`
+	Author    string    `json:"author" gorethink:"author"`
+	CreatedAt time.Time `json:"createdAt" gorethink:"createdAt"`
+	ChannelId string    `json:"channelId" gorethink:"channelId"`
+}
+
+//Message is
+type Message struct {
+	Name string      `json:"name" gorethink:"name"`
+	Data interface{} `json:"data" gorethink:"data"`
+}
+
+//Channel is
+type Channel struct {
+	ID   string `json:"id" gorethink:"id,omitempty"`
+	Name string `json:"name" gorethink:"name"`
+}
+type User struct {
+	ID   string `json:"id" gorethink:"id,omitempty"`
+	Name string `json:"name" gorethink:"name"`
+}
+
 func subscribeChannel(client *Client, data interface{}) {
 	stop := client.NewStopChannel(channelStop)
 	cursor, err := r.Table("channel").Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
@@ -95,33 +119,33 @@ func unsubscribeUser(client *Client, data interface{}) {
 	client.StopForKey(userStop)
 }
 
-type Temp struct {
-	ChannelId string `json:"channelId" gorethink:"channelId"`
-}
+// type Temp struct {
+// 	ChannelId string `json:"channelId" gorethink:"channelId"`
+// }
 
 func subscribeMessage(client *Client, data interface{}) {
-	var t Temp
-	err := mapstructure.Decode(data, &t)
-	if err != nil {
-		fmt.Print("error:-", err)
+	// var t Temp
+	// err := mapstructure.Decode(data, &t)
+	// if err != nil {
+	// 	fmt.Print("error:-", err)
+	// 	return
+	// }
+
+	eventData := data.(map[string]interface{})
+
+	val, ok := eventData["channelId"]
+	if !ok {
 		return
 	}
-
-	// eventData := data.(map[string]interface{})
-
-	// val, ok := eventData["channelId"]
-	// if !ok {
-	// 	return
-	// }
-	// fmt.Print(val)
-	// channelId, ok := val.(string)
-	// if !ok {
-	// 	return
-	// }
+	fmt.Print(val)
+	channelId, ok := val.(string)
+	if !ok {
+		return
+	}
 	stop := client.NewStopChannel(messageStop)
 	cursor, err := r.Table("message").
 		OrderBy(r.OrderByOpts{Index: r.Desc("createdAt")}).
-		Filter(r.Row.Field("channelId").Eq(t.ChannelId)).
+		Filter(r.Row.Field("channelId").Eq(channelId)).
 		Changes(r.ChangesOpts{IncludeInitial: true}).
 		Run(client.session)
 
