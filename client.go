@@ -2,18 +2,18 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	r "github.com/dancannon/gorethink"
 	"github.com/gorilla/websocket"
-	"github.com/mitchellh/mapstructure"
 )
 
 type Msg struct {
-	ID        string `json:"id" gorethink:"id,omitempty"`
-	Body      string `json:"body" gorethink:"body"`
-	Author    string `json:"author" gorethink:"author"`
-	CreatedAt int64  `json:"createdAt" gorethink:"createdAt"`
-	ChannelId string `json:"channelId" gorethink:"channelId"`
+	ID        string    `json:"id" gorethink:"id,omitempty"`
+	Body      string    `json:"body" gorethink:"body"`
+	Author    string    `json:"author" gorethink:"author"`
+	CreatedAt time.Time `json:"createdAt" gorethink:"createdAt"`
+	ChannelId string    `json:"channelId" gorethink:"channelId"`
 }
 
 //Message is
@@ -39,6 +39,8 @@ type Client struct {
 	findHandler  FindHandler
 	session      *r.Session
 	stopChannels map[int]chan bool
+	userName     string
+	id           string
 }
 
 //FindHandler is
@@ -46,12 +48,24 @@ type FindHandler func(string) (Handler, bool)
 
 //NewClient is
 func NewClient(socket *websocket.Conn, findHandler FindHandler, session *r.Session) *Client {
+	var user User
+	user.Name = "anonymous"
+	res, err := r.Table("user").Insert(user).RunWrite(session)
+	if err != nil {
+		fmt.Print("Error:", err)
+	}
+	var id string
+	if len(res.GeneratedKeys) > 0 {
+		id = res.GeneratedKeys[0]
+	}
 	return &Client{
 		socket:       socket,
 		send:         make(chan Message),
 		findHandler:  findHandler,
 		session:      session,
 		stopChannels: make(map[int]chan bool),
+		userName:     user.Name,
+		id:           id,
 	}
 
 }
@@ -69,6 +83,11 @@ func (c *Client) CloseConnections() {
 		stop <- true
 	}
 	close(c.send)
+	err := r.Table("user").Get(c.id).Delete().Exec(c.session)
+	if err != nil {
+		fmt.Print("Error:-", err)
+		return
+	}
 }
 
 func (c *Client) StopForKey(key int) {
@@ -105,31 +124,16 @@ func (client *Client) Write() {
 	client.socket.Close()
 }
 
-func (client *Client) subscribe(data interface{}, category string, stop chan bool) {
-	var cursor *r.Cursor
-	var err error
-	if category == "message" {
-		var msg Msg
-		err := mapstructure.Decode(data, &msg)
-		if err != nil {
-			client.send <- Message{Name: "error", Data: err.Error()}
-			return
-		}
-		cursor, err = r.Table(category).Filter(r.Row.Field("channelId").Eq(msg.ChannelId)).Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
-	} else {
-		cursor, err = r.Table(category).Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
-	}
-	if err != nil {
-		client.send <- Message{Name: "error", Data: err.Error()}
-		return
-	}
+func (client *Client) subscribe(cursor *r.Cursor, category string, stop chan bool) {
+
 	result := make(chan r.ChangeResponse)
-	go func() {
-		var changeResponse r.ChangeResponse
-		for cursor.Next(&changeResponse) {
-			result <- changeResponse
-		}
-	}()
+	// go func() {
+	// 	var changeResponse r.ChangeResponse
+	// 	for cursor.Next(&changeResponse) {
+	// 		result <- changeResponse
+	// 	}
+	// }()
+	cursor.Listen(result)
 	for {
 		select {
 		case changeResponse := <-result:
@@ -140,7 +144,7 @@ func (client *Client) subscribe(data interface{}, category string, stop chan boo
 				client.send <- Message{Name: category + " edit", Data: changeResponse.NewValue}
 				fmt.Println("Sent " + category + " edit message")
 			} else if changeResponse.NewValue == nil && changeResponse.OldValue != nil {
-				client.send <- Message{Name: category + " remove", Data: changeResponse.NewValue}
+				client.send <- Message{Name: category + " remove", Data: changeResponse.OldValue}
 				fmt.Println("Sent " + category + " remove message")
 			}
 		case <-stop:

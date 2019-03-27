@@ -16,7 +16,12 @@ const (
 
 func subscribeChannel(client *Client, data interface{}) {
 	stop := client.NewStopChannel(channelStop)
-	client.subscribe(data, "channel", stop)
+	cursor, err := r.Table("channel").Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
+	if err != nil {
+		client.send <- Message{Name: "error", Data: err.Error()}
+		return
+	}
+	client.subscribe(cursor, "channel", stop)
 	//Replace with changeFeed from Rethink Db that will look up for channels and then
 	//block/wait until add,remove or edit operation in channels data in db
 	// stop := client.NewStopChannel(channelStop)
@@ -77,31 +82,71 @@ func unsubscribeChannel(client *Client, data interface{}) {
 }
 func subscribeUser(client *Client, data interface{}) {
 	stop := client.NewStopChannel(userStop)
-	addUser(client)
-	client.subscribe(data, "user", stop)
+	cursor, err := r.Table("user").Changes(r.ChangesOpts{IncludeInitial: true}).Run(client.session)
+	if err != nil {
+		client.send <- Message{Name: "error", Data: err.Error()}
+		return
+	}
+	// addUser(client)
+	client.subscribe(cursor, "user", stop)
 }
 func unsubscribeUser(client *Client, data interface{}) {
 	// go removeUser(client, data)
 	client.StopForKey(userStop)
 }
+
+type Temp struct {
+	ChannelId string `json:"channelId" gorethink:"channelId"`
+}
+
 func subscribeMessage(client *Client, data interface{}) {
+	var t Temp
+	err := mapstructure.Decode(data, &t)
+	if err != nil {
+		fmt.Print("error:-", err)
+		return
+	}
+
+	// eventData := data.(map[string]interface{})
+
+	// val, ok := eventData["channelId"]
+	// if !ok {
+	// 	return
+	// }
+	// fmt.Print(val)
+	// channelId, ok := val.(string)
+	// if !ok {
+	// 	return
+	// }
 	stop := client.NewStopChannel(messageStop)
-	client.subscribe(data, "message", stop)
+	cursor, err := r.Table("message").
+		OrderBy(r.OrderByOpts{Index: r.Desc("createdAt")}).
+		Filter(r.Row.Field("channelId").Eq(t.ChannelId)).
+		Changes(r.ChangesOpts{IncludeInitial: true}).
+		Run(client.session)
+
+	if err != nil {
+		client.send <- Message{Name: "error", Data: err.Error()}
+		return
+	}
+	client.subscribe(cursor, "message", stop)
 }
 func unsubscribeMessage(client *Client, data interface{}) {
 	client.StopForKey(messageStop)
 }
 func editUser(client *Client, data interface{}) {
+	// fmt.Print(data)
 	var user User
 	err := mapstructure.Decode(data, &user)
 	if err != nil {
 		client.send <- Message{Name: "error", Data: err.Error()}
 		return
 	}
+	client.userName = user.Name
 	// channel.ID = 1
 	fmt.Println("User edited")
 	fmt.Printf("%+v\n", user)
-	err = r.Table("user").Get(user.ID).Update(user).Exec(client.session)
+	err = r.Table("user").Get(client.id).Update(user).Exec(client.session)
 	if err != nil {
 		client.send <- Message{Name: "error", Data: err.Error()}
 		return
@@ -114,7 +159,8 @@ func addMessage(client *Client, data interface{}) {
 		client.send <- Message{Name: "error", Data: err.Error()}
 		return
 	}
-	msg.CreatedAt = time.Now().Unix()
+	msg.CreatedAt = time.Now()
+	msg.Author = client.userName
 	// channel.ID = 1
 	fmt.Println("Message added")
 	fmt.Printf("%+v\n", msg)
